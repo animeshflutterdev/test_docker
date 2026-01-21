@@ -1,0 +1,307 @@
+================================================================================
+                    FASTAPI DOCKERIZATION GUIDE
+================================================================================
+
+PROJECT: FastAPI Docker Application
+DATE: 2026-01-20
+LOCATION: d:\Projects\python\test_docker
+
+================================================================================
+1. PROJECT STRUCTURE
+================================================================================
+
+test_docker/
+├── main.py              # FastAPI application
+├── requirements.txt     # Python dependencies
+├── Dockerfile          # Docker configuration
+├── .dockerignore       # Files to exclude from Docker build
+└── env/                # Virtual environment (excluded from Docker)
+
+================================================================================
+2. KEY FILES EXPLAINED
+================================================================================
+
+2.1 main.py
+-----------
+from fastapi import FastAPI
+
+app = FastAPI()              # ← This is the FastAPI instance
+
+@app.get("/")
+def read_root():             # ← Function name (NOT 'app' to avoid conflict)
+    return {"Hello": "World"}
+
+IMPORTANT: The variable 'app' must NOT be used as a function name!
+
+
+2.2 Dockerfile
+--------------
+FROM python:3.11-slim                    # Base Python image
+WORKDIR /.                               # Working directory in container
+ENV PYTHONDONTWRITEBYTECODE=1            # Don't create .pyc files
+ENV PYTHONUNBUFFERED=1                   # Real-time logging
+COPY requirements.txt .                  # Copy dependencies first
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .                                 # Copy application code
+EXPOSE 8000                              # Document the port
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+KEY POINTS:
+- "main:app" means: file 'main.py', variable 'app'
+- "--host 0.0.0.0" is CRITICAL for Docker (not 127.0.0.1)
+- 0.0.0.0 allows external connections to the container
+
+
+2.3 .dockerignore
+-----------------
+env
+__pycache__
+*.pyc
+*.pyo
+.git
+.gitignore
+Dockerfile
+README.md
+
+PURPOSE: Excludes unnecessary files from Docker image
+
+================================================================================
+3. UNDERSTANDING "main:app"
+================================================================================
+
+Syntax: <filename>:<variable_name>
+
+Example Breakdown:
+    main:app
+    │    │
+    │    └─── Variable name in the file (app = FastAPI())
+    │
+    └──────── Python file name without .py (main.py)
+
+Other Examples:
+- File: server.py, Variable: app          → uvicorn server:app
+- File: main.py, Variable: application    → uvicorn main:application
+- File: api.py, Variable: my_api          → uvicorn api:my_api
+
+================================================================================
+4. COMMON ISSUES & SOLUTIONS
+================================================================================
+
+ISSUE #1: Function Name Conflict
+---------------------------------
+❌ WRONG:
+    app = FastAPI()
+    def app():              # ← Overwrites the FastAPI instance!
+        return {"Hello": "World"}
+
+✅ CORRECT:
+    app = FastAPI()
+    def read_root():        # ← Different name
+        return {"Hello": "World"}
+
+ERROR: "Empty reply from server" when uvicorn finds function instead of app
+
+
+ISSUE #2: Wrong Host Binding in Docker
+---------------------------------------
+❌ WRONG:
+    CMD ["uvicorn", "main:app", "--host", "127.0.0.1", ...]
+    # 127.0.0.1 only allows connections from INSIDE the container
+
+✅ CORRECT:
+    CMD ["uvicorn", "main:app", "--host", "0.0.0.0", ...]
+    # 0.0.0.0 allows connections from OUTSIDE the container
+
+ERROR: curl returns "Empty reply from server"
+
+
+ISSUE #3: Incorrect Module Reference
+-------------------------------------
+❌ WRONG:
+    CMD ["uvicorn", "main", ...]        # Missing :app
+
+✅ CORRECT:
+    CMD ["uvicorn", "main:app", ...]    # Includes :app
+
+================================================================================
+5. DOCKER COMMANDS
+================================================================================
+
+Build the Docker Image:
+-----------------------
+docker build -t fastapi-app .
+
+Build without any cache:
+-----------------------
+docker build --no-cache -t fastapi-app .
+
+
+Explanation:
+- 'build' = Create a Docker image
+- '-t fastapi-app' = Tag/name the image as 'fastapi-app'
+- '.' = Use current directory as build context
+
+
+Run the Container (Detached):
+------------------------------
+docker run -d -p 8000:8000 --name fastapi-test fastapi-app
+
+Explanation:
+- '-d' = Detached mode (runs in background)
+- '-p 8000:8000' = Map host port 8000 to container port 8000
+- '--name fastapi-test' = Name the container
+- 'fastapi-app' = Image to use
+
+
+Run the Container (Interactive):
+---------------------------------
+docker run -p 8000:8000 fastapi-app
+
+Explanation:
+- No '-d' flag = See logs in real-time
+- Ctrl+C to stop
+
+
+List Running Containers:
+------------------------
+docker ps
+
+
+View Container Logs:
+--------------------
+docker logs fastapi-test
+
+
+Stop a Container:
+-----------------
+docker stop fastapi-test
+
+
+Remove a Container:
+-------------------
+docker rm fastapi-test
+
+
+Remove an Image:
+----------------
+docker rmi fastapi-app
+
+================================================================================
+6. TESTING THE APPLICATION
+================================================================================
+
+Once the container is running, test with:
+
+Using curl (Linux/Mac/Windows with curl):
+------------------------------------------
+curl http://localhost:8000
+
+Expected Response:
+{"Hello":"World"}
+
+
+Using Browser:
+--------------
+Navigate to: http://localhost:8000
+
+Expected Response:
+{"Hello":"World"}
+
+
+Using PowerShell (Windows):
+---------------------------
+Invoke-WebRequest -Uri http://localhost:8000
+
+================================================================================
+7. HOST BINDING EXPLAINED
+================================================================================
+
+127.0.0.1 (localhost):
+----------------------
+- Only accessible from the SAME machine
+- In Docker: only accessible from INSIDE the container
+- Use for: Local development WITHOUT Docker
+
+0.0.0.0 (all interfaces):
+-------------------------
+- Accessible from ANY network interface
+- In Docker: accessible from OUTSIDE the container
+- Use for: Docker containers, production servers
+
+Example:
+--------
+Local Development (No Docker):
+    uvicorn main:app --host 127.0.0.1 --port 8000
+
+Docker Container:
+    uvicorn main:app --host 0.0.0.0 --port 8000
+
+================================================================================
+8. PORT MAPPING EXPLAINED
+================================================================================
+
+Syntax: -p <host_port>:<container_port>
+
+Example: -p 8000:8000
+- Left (8000) = Port on YOUR computer
+- Right (8000) = Port INSIDE the container
+
+Other Examples:
+- -p 80:8000     → Access via http://localhost:80
+- -p 3000:8000   → Access via http://localhost:3000
+- -p 8000:8000   → Access via http://localhost:8000
+
+================================================================================
+9. TROUBLESHOOTING CHECKLIST
+================================================================================
+
+Container won't start:
+□ Check Dockerfile syntax
+□ Verify requirements.txt exists and is valid
+□ Check Docker logs: docker logs <container_name>
+
+Can't access the application:
+□ Verify container is running: docker ps
+□ Check host is 0.0.0.0 in Dockerfile
+□ Verify port mapping: -p 8000:8000
+□ Check firewall settings
+
+"Empty reply from server":
+□ Change --host from 127.0.0.1 to 0.0.0.0
+□ Rebuild the Docker image
+□ Stop old containers and start new one
+
+Application errors:
+□ Check container logs: docker logs <container_name>
+□ Verify main.py has no syntax errors
+□ Ensure 'app' variable exists and is FastAPI instance
+□ Check function names don't conflict with 'app'
+
+================================================================================
+10. WORKFLOW SUMMARY
+================================================================================
+
+Step 1: Fix Code Issues
+    - Ensure no function named 'app' conflicts with FastAPI instance
+    - Verify main.py syntax is correct
+
+Step 2: Create/Update Dockerfile
+    - Use --host 0.0.0.0 (not 127.0.0.1)
+    - Use correct syntax: main:app
+
+Step 3: Build Docker Image
+    docker build -t fastapi-app .
+
+Step 4: Run Container
+    docker run -d -p 8000:8000 --name fastapi-test fastapi-app
+
+Step 5: Verify
+    curl http://localhost:8000
+    OR visit http://localhost:8000 in browser
+
+Step 6: Check Logs (if issues)
+    docker logs fastapi-test
+
+================================================================================
+END OF GUIDE
+================================================================================
